@@ -32,6 +32,18 @@
 
                 <!-- Professional Actions & Nav Icons -->
                 <div class="flex items-center space-x-2 md:space-x-3">
+                    <!-- Continue with Google sign-in -->
+                    <div id="google-auth-control" class="flex items-center gap-2">
+                        <a id="google-login-link" href="/.netlify/functions/google-auth?action=login" aria-label="Continuer avec Google" class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700">
+                            <i class="fa-brands fa-google text-blue-600" aria-hidden="true"></i>
+                            <span>Continuer avec Google</span>
+                        </a>
+                        <div id="google-account" class="hidden items-center gap-2">
+                            <span id="google-account-label" class="max-w-[10rem] truncate text-xs font-medium text-slate-700 dark:text-slate-200"></span>
+                            <button id="google-logout-button" type="button" class="whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">Se déconnecter</button>
+                        </div>
+                    </div>
+
                     <!-- Google Workspace Hub Button -->
                     <button onclick="openGoogleWorkspaceModal()" class="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition">
                         <i class="fa-brands fa-google"></i>
@@ -58,6 +70,7 @@
 
         <!-- Main Content Area -->
         <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+            <div id="google-auth-status" class="hidden rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-100" role="status" aria-live="polite"></div>
             <!-- Hero / Intro Banner -->
             <div class="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
                 <div class="absolute -right-10 -bottom-10 opacity-10 text-9xl">
@@ -160,6 +173,71 @@
             });
             event.target.className = "pillar-tab active px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap bg-emerald-600 text-white shadow";
         }
+
+        async function refreshGoogleAuth() {
+            const endpoint = "/.netlify/functions/google-auth";
+            const loginLink = document.getElementById("google-login-link");
+            const account = document.getElementById("google-account");
+            const accountLabel = document.getElementById("google-account-label");
+            const status = document.getElementById("google-auth-status");
+            const logoutButton = document.getElementById("google-logout-button");
+
+            function showStatus(message) {
+                status.textContent = message;
+                status.classList.remove("hidden");
+            }
+
+            const query = new URLSearchParams(window.location.search);
+            const result = query.get("google_auth");
+            if (result === "success") showStatus("Connexion Google réussie.");
+            if (result === "cancelled") showStatus("Connexion Google annulée.");
+            if (result === "failed") showStatus("La connexion Google a échoué. Veuillez réessayer.");
+            if (result === "not-configured") showStatus("La connexion Google est en cours de configuration. Réessayez plus tard.");
+            if (result) {
+                query.delete("google_auth");
+                const cleanedQuery = query.toString();
+                window.history.replaceState({}, document.title, window.location.pathname + (cleanedQuery ? "?" + cleanedQuery : "") + window.location.hash);
+            }
+
+            try {
+                const response = await fetch(endpoint + "?action=me", { credentials: "same-origin", cache: "no-store" });
+                if (!response.ok) throw new Error("Auth endpoint unavailable");
+                const data = await response.json();
+                if (!data.configured) {
+                    loginLink.setAttribute("aria-disabled", "true");
+                    loginLink.classList.add("pointer-events-none", "opacity-50");
+                    showStatus("La connexion Google est en cours de configuration. Réessayez plus tard.");
+                    return;
+                }
+                loginLink.setAttribute("aria-disabled", "false");
+                loginLink.classList.remove("pointer-events-none", "opacity-50");
+                if (data.authenticated && data.user) {
+                    loginLink.classList.add("hidden");
+                    account.classList.remove("hidden");
+                    accountLabel.textContent = data.user.name || data.user.email || "Compte Google";
+                } else {
+                    loginLink.classList.remove("hidden");
+                    account.classList.add("hidden");
+                }
+            } catch (error) {
+                loginLink.setAttribute("aria-disabled", "true");
+                loginLink.classList.add("pointer-events-none", "opacity-50");
+                showStatus("La connexion Google n’est pas disponible sur ce déploiement.");
+            }
+
+            logoutButton.addEventListener("click", async function () {
+                logoutButton.disabled = true;
+                try {
+                    await fetch(endpoint + "?action=logout", { method: "POST", credentials: "same-origin", cache: "no-store" });
+                    window.location.assign(window.location.pathname);
+                } catch (error) {
+                    logoutButton.disabled = false;
+                    showStatus("Impossible de fermer la session. Veuillez réessayer.");
+                }
+            });
+        }
+
+        refreshGoogleAuth();
     </script>
 </body>
 </html>
